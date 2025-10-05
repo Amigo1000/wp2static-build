@@ -1,33 +1,41 @@
 name: Build WP2Static ZIP
 
 on:
-  push:
-    branches: [ main ]
-
+  # Manual run from the Actions tab (lets you choose a tag/branch)
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (tag/branch/commit). Example: v7.2 or main"
+        required: false
+        default: "main"
 
 jobs:
-  build-wp2static:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout (empty repo)
+      - name: Checkout (this repo, not used)
         uses: actions/checkout@v4
 
-      - name: Clone wp2static
+      - name: Clone wp2static source
         run: |
+          set -e
+          REF="${{ github.event.inputs.ref }}"
+          [ -z "$REF" ] && REF=main
+          echo "Building wp2static at ref: $REF"
           git clone https://github.com/elementor/wp2static.git
           cd wp2static
-          git fetch --all --tags
-          git checkout "${{ github.event.inputs.ref || 'main' }}"
+          git fetch --all --tags --prune
+          git checkout "$REF"
 
-      - name: Set up PHP
+      - name: Set up PHP + Composer
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
           extensions: zip
           tools: composer:v2
 
-      - name: Cache Composer deps
+      - name: Cache Composer downloads
         uses: actions/cache@v4
         with:
           path: ~/.composer/cache
@@ -35,14 +43,15 @@ jobs:
           restore-keys: |
             composer-${{ runner.os }}-
 
-      - name: Install production deps
+      - name: Install production dependencies
         working-directory: wp2static
         run: |
           composer install --no-dev --prefer-dist --no-interaction
           composer dump-autoload -o
 
-      - name: Package plugin ZIP
+      - name: Package WordPress-installable ZIP
         run: |
+          # Create a clean plugin zip without dev/test files
           zip -r wp2static.zip wp2static \
             -x "wp2static/.git/*" \
                "wp2static/tests/*" \
@@ -53,61 +62,10 @@ jobs:
                "wp2static/*.md" \
                "wp2static/nix/*"
 
-      - name: Upload artifact (core plugin)
+      - name: Upload artifact (plugin ZIP)
         uses: actions/upload-artifact@v4
         with:
-          name: wp2static-core
+          name: wp2static-plugin-${{ github.event.inputs.ref || 'main' }}
           path: wp2static.zip
           if-no-files-found: error
-
-  build-netlify-addon:
-    if: ${{ (github.event.inputs.include_netlify_addon || 'yes') == 'yes' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout (empty repo)
-        uses: actions/checkout@v4
-
-      - name: Clone Netlify add-on
-        run: |
-          git clone https://github.com/elementor/wp2static-netlify.git
-          cd wp2static-netlify
-          git fetch --all --tags
-          # build default branch; change to 'git checkout TAG' if you want a specific version
-          # git checkout vX.Y.Z
-
-      - name: Set up PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.2'
-          extensions: zip
-          tools: composer:v2
-
-      - name: Cache Composer deps
-        uses: actions/cache@v4
-        with:
-          path: ~/.composer/cache
-          key: composer-${{ runner.os }}-${{ hashFiles('wp2static-netlify/composer.lock') }}
-          restore-keys: |
-            composer-${{ runner.os }}-
-
-      - name: Install production deps
-        working-directory: wp2static-netlify
-        run: |
-          composer install --no-dev --prefer-dist --no-interaction
-          composer dump-autoload -o
-
-      - name: Package add-on ZIP
-        run: |
-          zip -r wp2static-netlify.zip wp2static-netlify \
-            -x "wp2static-netlify/.git/*" \
-               "wp2static-netlify/tests/*" \
-               "wp2static-netlify/.github/*" \
-               "wp2static-netlify/phpunit.xml" \
-               "wp2static-netlify/*.md"
-
-      - name: Upload artifact (Netlify add-on)
-        uses: actions/upload-artifact@v4
-        with:
-          name: wp2static-netlify-addon
-          path: wp2static-netlify.zip
-          if-no-files-found: error
+          retention-days: 14
