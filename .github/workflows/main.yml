@@ -1,16 +1,9 @@
 name: Build WP2Static ZIP
 
 on:
-  workflow_dispatch:
-    inputs:
-      ref:
-        description: "wp2static Git ref to build (tag/branch/commit). Example: v7.2 or main"
-        required: false
-        default: "main"
-      include_netlify_addon:
-        description: "Also build the Netlify add-on (yes/no)"
-        required: false
-        default: "yes"
+  push:
+    branches: [ main ]
+
 
 jobs:
   build-wp2static:
