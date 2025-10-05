@@ -1,4 +1,4 @@
-name: Build WP2Static ZIP
+name: Build WP2Static + Add-ons
 
 on:
   workflow_dispatch:
@@ -11,14 +11,16 @@ on:
         description: "Also build the Netlify add-on (yes/no)"
         required: false
         default: "yes"
+      include_zip_addon:
+        description: "Also build the ZIP add-on (yes/no)"
+        required: false
+        default: "yes"
 
 jobs:
   build-wp2static-core:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout (this repo; not used by the build)
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Clone wp2static source
         run: |
@@ -75,18 +77,16 @@ jobs:
   build-netlify-addon:
     if: ${{ (github.event.inputs.include_netlify_addon || 'yes') == 'yes' }}
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout (this repo; not used by the build)
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Clone Netlify add-on source
+      - name: Clone Netlify add-on
         run: |
           set -e
           git clone https://github.com/elementor/wp2static-netlify.git
           cd wp2static-netlify
           git fetch --all --tags --prune
-          # To pin a specific tag, uncomment and set it:
+          # Pin a specific tag if you like:
           # git checkout vX.Y.Z
 
       - name: Set up PHP + Composer
@@ -95,3 +95,87 @@ jobs:
           php-version: '8.2'
           extensions: zip
           tools: composer:v2
+
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ runner.os }}-${{ hashFiles('wp2static-netlify/composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-
+
+      - name: Install production dependencies
+        working-directory: wp2static-netlify
+        run: |
+          composer install --no-dev --prefer-dist --no-interaction
+          composer dump-autoload -o
+
+      - name: Package Netlify add-on ZIP
+        run: |
+          zip -r wp2static-netlify.zip wp2static-netlify \
+            -x "wp2static-netlify/.git/*" \
+               "wp2static-netlify/tests/*" \
+               "wp2static-netlify/.github/*" \
+               "wp2static-netlify/phpunit.xml" \
+               "wp2static-netlify/*.md"
+
+      - name: Upload artifact (Netlify add-on)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wp2static-netlify-addon
+          path: wp2static-netlify.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  build-zip-addon:
+    if: ${{ (github.event.inputs.include_zip_addon || 'yes') == 'yes' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone ZIP add-on
+        run: |
+          set -e
+          git clone https://github.com/elementor/wp2static-addon-zip.git
+          cd wp2static-addon-zip
+          git fetch --all --tags --prune
+          # Pin a specific tag if you like:
+          # git checkout vX.Y.Z
+
+      - name: Set up PHP + Composer
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: zip
+          tools: composer:v2
+
+      - name: Cache Composer downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ runner.os }}-${{ hashFiles('wp2static-addon-zip/composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-
+
+      - name: Install production dependencies
+        working-directory: wp2static-addon-zip
+        run: |
+          composer install --no-dev --prefer-dist --no-interaction
+          composer dump-autoload -o
+
+      - name: Package ZIP add-on
+        run: |
+          zip -r wp2static-addon-zip.zip wp2static-addon-zip \
+            -x "wp2static-addon-zip/.git/*" \
+               "wp2static-addon-zip/tests/*" \
+               "wp2static-addon-zip/.github/*" \
+               "wp2static-addon-zip/phpunit.xml" \
+               "wp2static-addon-zip/*.md"
+
+      - name: Upload artifact (ZIP add-on)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wp2static-addon-zip
+          path: wp2static-addon-zip.zip
+          if-no-files-found: error
+          retention-days: 14
